@@ -651,7 +651,7 @@ function download_csv(csv) {
 // Init jsPsych
 const jsPsych = initJsPsych({
   on_finish: function() {
-    save_data(jsPsych.data.get().filter({trial_type: "audio-button-response"}).csv());
+    save_data(jsPsych.data.get().filter({trial_type: "audio-button-response", practice: false}).csv());
   }
 });
 
@@ -663,15 +663,80 @@ const preload_trial = {
   message: '<p style="font-family:sans-serif;text-align:center;padding:2rem;">Loading audio files, please wait...</p>',
 };
 
-// Start button
-const start = {
+const STYLE = `font-family:Georgia,serif;font-size:1.05rem;line-height:1.7;max-width:680px;margin:0 auto;text-align:left;padding:1.5rem 1rem;`;
+
+// --- Instruction screens ---
+
+const screen_welcome = {
   type: jsPsychHtmlButtonResponse,
-  stimulus: '<p style="font-family:sans-serif;font-size:1.1rem;text-align:center;padding:1rem 0;">Speech Perception Study</p>',
+  stimulus: `<div style="${STYLE}">
+    <h2 style="text-align:center;margin-bottom:1.5rem;">Speech Perception Study</h2>
+    <p>Hello and thank you for participating in this study. Please read all directions carefully before beginning the task.</p>
+    <p><strong>Step 1 — Google Form</strong><br>
+    Before we begin, please fill out this short form (2–5 minutes):<br>
+    <a href="https://forms.gle/FZFKZAQs9rH8trzS6" target="_blank" style="color:#335;">https://forms.gle/FZFKZAQs9rH8trzS6</a></p>
+    <p>Once you have completed the form, click <strong>Next</strong> to continue.</p>
+  </div>`,
+  choices: ["Next"],
+};
+
+const screen_task = {
+  type: jsPsychHtmlButtonResponse,
+  stimulus: `<div style="${STYLE}">
+    <h2 style="text-align:center;margin-bottom:1.5rem;">Task Instructions</h2>
+    <p>In this study, you will hear a short audio recording of a speech sound. Once the sound has played, four options will appear on the screen. Please select the button that matches what you heard.</p>
+    <p>To get familiar with the task, you will now complete a short practice trial. Click <strong>Next</strong> to begin the practice.</p>
+  </div>`,
+  choices: ["Next"],
+};
+
+// Pick 3 random practice stimuli from different pairs
+const all_pairs = Object.keys(PLACE_CHOICES);
+const shuffled_pairs = all_pairs.sort(() => Math.random() - 0.5).slice(0, 3);
+const practice_trials = shuffled_pairs.map((place, idx) => {
+  const pitches = ["high", "low"];
+  const pitch = pitches[Math.floor(Math.random() * pitches.length)];
+  const step = Math.floor(Math.random() * 7) + 1;
+  const pair = PAIRS.find(p => p.place === place);
+  const choices = PLACE_CHOICES[place];
+  return {
+    type: jsPsychAudioButtonResponse,
+    stimulus: `${CONFIG.stimuli_path}/${pair.name}_continuum/${pair.name}_${pitch}_step${step}.wav`,
+    choices: choices,
+    button_layout: "grid",
+    grid_rows: 2,
+    grid_columns: 2,
+    prompt: `<div style="font-family:Georgia,serif;text-align:center;padding-bottom:1.5rem;">
+      <div style="color:#888;font-size:0.95rem;margin-bottom:0.75rem;">PRACTICE TRIAL ${idx + 1} OF 3</div>
+      <div style="font-size:3rem;margin-bottom:0.5rem;">♪</div>
+      <div style="color:#666;font-size:0.9rem;">Listen, then select what you heard.</div>
+    </div>`,
+    response_allowed_while_playing: false,
+    trial_ends_after_audio: false,
+    data: { practice: true },
+  };
+});
+
+const screen_after_practice = {
+  type: jsPsychHtmlButtonResponse,
+  stimulus: `<div style="${STYLE}">
+    <h2 style="text-align:center;margin-bottom:1.5rem;">Before You Begin</h2>
+    <p>Great job! Here are a few reminders before the experiment starts:</p>
+    <ul style="padding-left:1.5rem;">
+      <li>This experiment contains <strong>336 trials</strong> and should take approximately <strong>15–20 minutes</strong>.</li>
+      <li>The experiment will prompt you to take a break every 30 trials. You may rest then, or skip the break.</li>
+      <li>Please make sure you are in a <strong>quiet room</strong>.</li>
+      <li>If you have headphones or earphones, please use them.</li>
+      <li>You <strong>cannot replay</strong> an audio recording, so please listen carefully.</li>
+      <li>Try your best — even if sounds seem very similar, go with your best guess.</li>
+    </ul>
+    <p>Press <strong>Start</strong> when you are ready to begin. Good luck!</p>
+  </div>`,
   choices: ["Start"],
 };
 
 // Build timeline
-const timeline = [preload_trial, start];
+const timeline = [preload_trial, screen_welcome, screen_task, ...practice_trials, screen_after_practice];
 
 for (let i = 0; i < all_trials.length; i++) {
   // Break
@@ -701,7 +766,7 @@ for (let i = 0; i < all_trials.length; i++) {
     response_allowed_while_playing: false,
     trial_ends_after_audio: false,
     post_trial_gap: CONFIG.iti_ms,
-    data: { pair: t.pair, singleton: t.singleton, geminate: t.geminate, place: t.place, pitch: t.pitch, step: t.step, rep: t.rep },
+    data: { practice: false, pair: t.pair, singleton: t.singleton, geminate: t.geminate, place: t.place, pitch: t.pitch, step: t.step, rep: t.rep },
     on_finish: function(data) {
       data.response_label = choices[data.response];
       data.chose_geminate = (data.response === 1 || data.response === 3) ? 1 : 0;
@@ -712,8 +777,17 @@ for (let i = 0; i < all_trials.length; i++) {
 
 timeline.push({
   type: jsPsychHtmlButtonResponse,
-  stimulus: '<p style="font-family:sans-serif;text-align:center;padding:1rem;">All done! Thank you. Your data will now download.</p>',
-  choices: ["Save & finish"],
+  stimulus: `<div style="${STYLE}">
+    <h2 style="text-align:center;margin-bottom:1.5rem;">You're Done!</h2>
+    <p>You have completed the experiment. Thank you so much for participating!</p>
+    <p>Please download your data by clicking the button below. Once downloaded, please send the CSV file using one of the following:</p>
+    <ul style="padding-left:1.5rem;">
+      <li>Email: <a href="mailto:priyankasamant@berkeley.edu" style="color:#335;">priyankasamant@berkeley.edu</a></li>
+      <li>Text/message: <a href="sms:5109364974" style="color:#335;">510-936-4974</a></li>
+    </ul>
+    <p>Please don't hesitate to reach out with any questions or concerns!</p>
+  </div>`,
+  choices: ["Download my data"],
 });
 
 // Keyboard shortcuts: 1-4 for the four buttons (top-left, top-right, bottom-left, bottom-right)
